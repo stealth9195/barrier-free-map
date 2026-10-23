@@ -48,3 +48,17 @@ BARRIER_GROUPS = [
         ("infantsfamilyetc", "영유아가족 기타상세"),
     ]),
 ]
+
+# 목록 필터용 편의시설 칩 (자주 쓰는 10개)
+FACILITY_CHIPS = [
+    ("parking", "주차"),
+    ("publictransport", "대중교통"),
+    ("route", "접근로"),
+    ("exit", "출입통로"),
+    ("elevator", "엘리베이터"),
+    ("restroom", "화장실"),
+    ("wheelchair", "휠체어 대여"),
+    ("braileblock", "점자블록"),
+    ("stroller", "유모차"),
+    ("lactationroom", "수유실"),
+]

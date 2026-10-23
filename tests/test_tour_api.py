@@ -140,3 +140,12 @@ def test_image_urls_upgraded_to_https():
     item = api.search()[0][0]
     assert item["firstimage"] == "https://tong.visitkorea.or.kr/a.jpg"
     assert item["firstimage2"] == "https://tong.visitkorea.or.kr/b.jpg"
+
+
+def test_area_based_page_returns_raw_items_and_total():
+    s = FakeSession(ok({"item": [{"contentid": "1", "mapx": "", "mapy": ""}]}, total=1500))
+    items, total = TourApi("k", session=s).area_based_page("1", page=2)
+    assert items == [{"contentid": "1", "mapx": "", "mapy": ""}] and total == 1500
+    url, p = s.calls[0]
+    assert url.endswith("/areaBasedList2")
+    assert p["areaCode"] == "1" and p["pageNo"] == 2 and p["numOfRows"] == 1000

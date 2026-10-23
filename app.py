@@ -1,14 +1,14 @@
-"""무장애 관광지 지도 — KorWithService2 + 카카오맵."""
+"""Trip For All — 미리 수집한 무장애 관광 데이터셋 + 카카오맵."""
 from html import escape
 
 import streamlit as st
 
 import config
-import tour_api
+from dataset import filter_places, load_dataset
 from kakao_map import render_map_html
-from labels import BARRIER_GROUPS, CONTENT_TYPES
+from labels import BARRIER_GROUPS, CONTENT_TYPES, FACILITY_CHIPS
 
-st.set_page_config(page_title="무장애 관광지 지도", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Trip For All", layout="wide", initial_sidebar_state="collapsed")
 
 STYLE = """
 <style>
@@ -41,14 +41,15 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
 .st-key-detail img { max-height: 200px; object-fit: cover; border-radius: 12px; }
 .info-row { font-size: 14px; color: #0F172A; line-height: 1.55; padding: 6px 0; border-top: 1px solid #F1F5F9; }
 .info-row span { display: inline-block; min-width: 92px; color: #475569; }
-.st-key-ctype button[data-variant="pills"] { border-radius: 999px !important; background: #FFFFFF !important;
+.st-key-facilities button[data-variant="pills"] { border-radius: 999px !important; background: #FFFFFF !important;
   border: 1px solid #D1D5DB !important; min-height: 36px; padding: 0 14px !important; }
-.st-key-ctype button[aria-checked="true"] { background: #1F2937 !important; border-color: #1F2937 !important; }
-.st-key-ctype button[aria-checked="true"] p { color: #FFFFFF !important; }
+.st-key-facilities button[aria-checked="true"], .st-key-facilities button[aria-pressed="true"] { background: #1F2937 !important; border-color: #1F2937 !important; }
+.st-key-facilities button[aria-checked="true"] p, .st-key-facilities button[aria-pressed="true"] p { color: #FFFFFF !important; }
 [class*="st-key-dlg_"] button[data-variant="pills"] { border-radius: 8px !important; background: #FFFFFF !important;
   border: 1px solid #D1D5DB !important; min-height: 40px; }
 [class*="st-key-dlg_"] button[aria-checked="true"] { border: 1.5px solid #2563EB !important; }
 [class*="st-key-dlg_"] button[aria-checked="true"] p { color: #2563EB !important; font-weight: 700; }
+.st-key-ctype div[data-baseweb="select"] > div { border-radius: 999px; }
 .st-key-open_settings button { border-radius: 999px; width: 44px; height: 44px; padding: 0;
   background: #FFFFFF; border: 1px solid #D1D5DB; }
 @media (max-width: 640px) {
@@ -62,85 +63,52 @@ h1 { font-size: 1.5rem !important; font-weight: 700 !important; letter-spacing: 
 """
 st.html(STYLE)
 
-SERVICE_KEY = config.get_setting("OPENAI_API_KEY")
-BASE_URL = config.get_setting("OPENAI_END_POINT", tour_api.DEFAULT_BASE_URL)
 KAKAO_JS_KEY = config.get_setting("KAKAO_JS_KEY")
+DATASET_PATH = config.get_setting("DATASET_PATH", "dataset/seoul.json")
 
-missing = [name for name, value in (("OPENAI_API_KEY", SERVICE_KEY), ("KAKAO_JS_KEY", KAKAO_JS_KEY))
-           if not value]
-if missing:
-    st.error(f"설정이 필요합니다: {', '.join(missing)} — 로컬은 .env, 배포는 Streamlit Secrets에 입력하세요.")
+if not KAKAO_JS_KEY:
+    st.error("설정이 필요합니다: KAKAO_JS_KEY — 로컬은 .env, 배포는 Streamlit Secrets에 입력하세요.")
     st.stop()
 
 GROUP_ICONS = {"지체장애": ":material/accessible:", "시각장애": ":material/visibility:",
                "청각장애": ":material/hearing:", "영유아가족": ":material/child_friendly:"}
+CHIP_LABELS = dict(FACILITY_CHIPS)
 
 
-@st.cache_resource
-def get_api():
-    return tour_api.TourApi(SERVICE_KEY, BASE_URL)
-
-
-@st.cache_data(ttl=24 * 3600, show_spinner=False)
-def load_areas(area_code=None):
-    return get_api().area_codes(area_code)
-
-
-@st.cache_data(ttl=3600, show_spinner="검색 중...")
-def run_search(area_code, sigungu_code, content_type_id, keyword):
-    return get_api().search(area_code=area_code, sigungu_code=sigungu_code,
-                            content_type_id=content_type_id, keyword=keyword)
-
-
-@st.cache_data(ttl=24 * 3600, show_spinner=False)
-def load_barrier(content_id):
-    return get_api().barrier_free(content_id)
-
-
-def show_error(e):
-    if tour_api.QUOTA_EXCEEDED in str(e):
-        st.error("오늘 API 호출 한도를 초과했습니다")
-    else:
-        st.error(f"API 오류: {e}")
+@st.cache_data(show_spinner=False)
+def get_dataset(path):
+    return load_dataset(path)
 
 
 def select(content_id):
     st.session_state.selected_id = content_id
 
 
-def as_map(codes):
-    return {a["code"]: a["name"] for a in codes}
+try:
+    data = get_dataset(DATASET_PATH)
+except FileNotFoundError:
+    st.error(f"데이터 파일({DATASET_PATH})이 없습니다. 먼저 `python build_dataset.py` 를 실행하세요.")
+    st.stop()
 
+sigungus = {s["code"]: s["name"] for s in data.get("sigungu", [])}
+area_name = data.get("area_name", "")
 
-for name, default in (("area", None), ("sigungu", None), ("selected_id", None),
-                      ("last_query", None), ("results", ([], 0))):
+for name, default in (("sigungu", None), ("selected_id", None), ("last_query", None), ("results", [])):
     st.session_state.setdefault(name, default)
 
 
 @st.dialog("세부 설정")
-def settings_dialog(areas):
-    st.markdown("**지역** · 하나만 선택")
-    area = st.pills("시도", list(areas), format_func=areas.get, default=st.session_state.area,
-                    key="dlg_area", label_visibility="collapsed")
-    sigungu = None
-    if area:
-        sigungus = as_map(load_areas(area))
-        current = st.session_state.sigungu if area == st.session_state.area else None
-        st.markdown("**시군구** · 선택하지 않으면 전체")
-        sigungu = st.pills("시군구", list(sigungus), format_func=sigungus.get, default=current,
-                           key="dlg_sigungu", label_visibility="collapsed")
+def settings_dialog():
+    st.markdown(f"**{area_name} 시군구** · 선택하지 않으면 전체")
+    sigungu = st.pills("시군구", list(sigungus), format_func=sigungus.get, default=st.session_state.sigungu,
+                       key="dlg_sigungu", label_visibility="collapsed")
     if st.button("저장", type="primary", width="stretch"):
-        st.session_state.area, st.session_state.sigungu = area, sigungu
+        st.session_state.sigungu = sigungu
         st.rerun()
 
 
-st.title("무장애 관광지 지도")
-
-try:
-    areas = as_map(load_areas())
-except tour_api.TourApiError as e:
-    show_error(e)
-    areas = {}
+st.title("Trip For All")
+st.caption(f"{area_name} 무장애 관광 지도 · 데이터 기준일 {data.get('built_at', '-')} · 출처: 한국관광공사 무장애여행 정보")
 
 map_col, panel_col = st.columns([3, 2], gap="medium")
 
@@ -150,36 +118,29 @@ with panel_col:
 with sheet:
     # 열(columns)은 휴대폰 폭에서 세로로 쌓이므로 가로 컨테이너로 검색창과 버튼을 한 줄에 둔다.
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        keyword = st.text_input("장소 검색", key="keyword", placeholder="장소 이름으로 검색해 보세요",
+        keyword = st.text_input("장소 검색", key="keyword", placeholder="장소나 편의시설로 검색해 보세요 (예: 경사로)",
                                 icon=":material/search:", label_visibility="collapsed")
-        if st.button("", icon=":material/tune:", key="open_settings", help="세부 설정 (지역)"):
-            settings_dialog(areas)
-    ctype = st.pills("관광타입", list(CONTENT_TYPES), format_func=CONTENT_TYPES.get, key="ctype",
-                     label_visibility="collapsed")
+        if st.button("", icon=":material/tune:", key="open_settings", help="세부 설정 (시군구)"):
+            settings_dialog()
+    ctype = st.selectbox("관광타입", [None, *CONTENT_TYPES], key="ctype", label_visibility="collapsed",
+                         format_func=lambda c: CONTENT_TYPES.get(c, "관광타입 전체"))
+    facilities = st.pills("편의시설", list(CHIP_LABELS), format_func=CHIP_LABELS.get, key="facilities",
+                          selection_mode="multi", label_visibility="collapsed") or []
 
-    area, sigungu = st.session_state.area, st.session_state.sigungu
-    query = (area, sigungu, ctype, (keyword or "").strip())
+    sigungu = st.session_state.sigungu
+    query = (sigungu, ctype, tuple(facilities), (keyword or "").strip())
     if query != st.session_state.last_query:
         st.session_state.selected_id = None
         st.session_state.last_query = query
-    try:
-        st.session_state.results = run_search(*query)
-    except tour_api.TourApiError as e:
-        show_error(e)
-        st.session_state.results = ([], 0)
+    places = filter_places(data["places"], sigungu=sigungu, content_type=ctype,
+                           facilities=facilities, keyword=keyword)
+    st.session_state.results = places
 
-places, total = st.session_state.results
 selected = next((p for p in places if p["contentid"] == st.session_state.selected_id), None)
-info = {}
-if selected:
-    try:
-        info = load_barrier(selected["contentid"])
-    except tour_api.TourApiError as e:
-        with sheet:
-            show_error(e)
+info = selected["barrier"] if selected else {}
 
 with sheet:
-    region = " · ".join(n for n in (areas.get(area, "전국"), area and sigungu and as_map(load_areas(area)).get(sigungu)) if n)
+    region = " · ".join(n for n in (area_name, sigungus.get(sigungu)) if n)
     st.markdown(f'<div class="region">{escape(region)}</div>', unsafe_allow_html=True)
 
     if selected:
@@ -204,10 +165,8 @@ with sheet:
                 st.markdown("등록된 무장애 정보가 없습니다")
 
     st.markdown(f"**검색 결과 {len(places)}곳**")
-    if total > 100:
-        st.caption("상위 100건만 표시합니다")
     if not places:
-        st.caption("조건에 맞는 장소가 없어요. 키워드를 지우거나 세부 설정에서 지역을 바꿔 보세요.")
+        st.caption("조건에 맞는 장소가 없어요. 편의시설 칩을 줄이거나 검색어를 바꿔 보세요.")
 
     with st.container(height=560 if places else "content", border=False, key="list"):
         for p in places:
@@ -218,11 +177,17 @@ with sheet:
                 thumb = (f'<div class="thumb" style="background-image:url(&quot;{escape(p["firstimage2"])}&quot;)"></div>'
                          if p.get("firstimage2") else '<div class="thumb"></div>')
                 ctype_name = CONTENT_TYPES.get(str(p.get("contenttypeid")), "")
+                # 켜 둔 칩에 해당하는 편의시설을 앞에 두고 파란색으로 강조한다.
+                keys = sorted((k for k in CHIP_LABELS if k in p["barrier"]), key=lambda k: k not in facilities)
+                tags = "".join(f'<span class="tag{" blue" if k in facilities else ""}">{escape(CHIP_LABELS[k])}</span>'
+                               for k in keys[:4])
+                if len(keys) > 4:
+                    tags += f'<span class="tag">+{len(keys) - 4}</span>'
                 st.markdown(
                     f'<div class="card"><div class="card-body">'
                     f'<div class="card-title">{escape(p.get("title", ""))}</div>'
                     f'<div class="card-addr">{escape(p.get("addr1", ""))}</div>'
-                    f'<span class="tag">{escape(ctype_name)}</span></div>{thumb}</div>',
+                    f'<span class="tag">{escape(ctype_name)}</span>{tags}</div>{thumb}</div>',
                     unsafe_allow_html=True)
                 st.button("선택됨" if is_sel else "자세히 보기", key=f"pick_{cid}", type="tertiary",
                           icon=":material/check:" if is_sel else ":material/chevron_right:",

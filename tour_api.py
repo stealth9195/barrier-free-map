@@ -84,6 +84,10 @@ class TourApi:
                 places.append(place)
         return places, total
 
+    def area_based_page(self, area_code, page, rows=1000):
+        """데이터셋 수집용: 좌표 필터 없이 지역 목록 한 페이지를 그대로 돌려준다."""
+        return self._get("areaBasedList2", areaCode=area_code, numOfRows=rows, pageNo=page, arrange="C")
+
     def barrier_free(self, content_id):
         items, _ = self._get("detailWithTour2", contentId=content_id)
         if not items:
