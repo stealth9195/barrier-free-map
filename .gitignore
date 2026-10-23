@@ -1,0 +1,42 @@
+# 환경 변수 (비밀키)
+.env
+.env.*
+!.env.example
+
+# 의존성
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# 빌드 결과물
+dist/
+build/
+.next/
+
+# 로그
+*.log
+npm-debug.log*
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# superpowers 작업 공간
+.superpowers/
+
+# Streamlit 비밀 설정
+.streamlit/secrets.toml
+
+# 테스트 캐시
+.pytest_cache/
+
+# 로컬 도구 설정
+.claude/
+
+# 수집 데이터와 참고 문서 (용량·저작권 문제로 저장소에 올리지 않음)
+data/
+*.docx
