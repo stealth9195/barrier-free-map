@@ -1,0 +1,12 @@
+[theme]
+base = "light"
+primaryColor = "#2563EB"
+backgroundColor = "#F5F6F8"
+secondaryBackgroundColor = "#F1F3F5"
+textColor = "#0F172A"
+baseRadius = "12px"
+font = "Noto Sans KR:https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap"
+showSidebarBorder = false
+
+[client]
+showSidebarNavigation = false

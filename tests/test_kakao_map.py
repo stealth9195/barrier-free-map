@@ -45,3 +45,12 @@ def test_placeholder_text_in_data_is_not_substituted():
     tricky = [{**P[0], "title": "a__SELECTED__b", "addr1": "__KEY__"}]
     h = render_map_html(tricky, "K", selected_id="1")
     assert '"a__SELECTED__b"' in h and '"__KEY__"' in h
+
+
+def test_custom_marker_image_used():
+    assert "MarkerImage" in render_map_html(P, "K")
+
+
+def test_selected_tags_shown_in_infowindow():
+    h = render_map_html(P, "K", selected_id="1", selected_tags=["경사로", "화장실"])
+    assert '"경사로"' in h and '"화장실"' in h
